@@ -24,15 +24,15 @@ function mustEnv(name, value) {
   return value
 }
 
-async function koraFetch(path, { method = 'POST', body } = {}) {
-  const url = `${mustEnv('KORA_RPC_URL', KORA_RPC_URL).replace(/\/$/, '')}${path}`
+async function koraRpc(method, params = {}) {
+  const url = mustEnv('KORA_RPC_URL', KORA_RPC_URL).replace(/\/$/, '')
   const headers = { 'content-type': 'application/json' }
   if (KORA_API_KEY) headers['authorization'] = `Bearer ${KORA_API_KEY}`
 
   const res = await fetch(url, {
-    method,
+    method: 'POST',
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
   })
 
   const text = await res.text()
@@ -44,14 +44,20 @@ async function koraFetch(path, { method = 'POST', body } = {}) {
   }
 
   if (!res.ok) {
-    const msg = json?.error || json?.message || text || `${res.status}`
-    const err = new Error(`Kora RPC ${method} ${path} failed: ${res.status} ${msg}`)
+    const msg = json?.error?.message || json?.message || text || `${res.status}`
+    const err = new Error(`Kora RPC ${method} failed: ${res.status} ${msg}`)
     err.status = res.status
     err.body = json || text
     throw err
   }
 
-  return json
+  if (!json || json.jsonrpc != '2.0') {
+    throw new Error(`Kora RPC ${method} returned non-JSON-RPC response: ${text}`)
+  }
+  if (json.error) {
+    throw new Error(`Kora RPC ${method} error: ${json.error.message || JSON.stringify(json.error)}`)
+  }
+  return json.result
 }
 
 // --- auth (optional) ---
@@ -74,7 +80,7 @@ app.get('/supported', requireToken, async (_req, res) => {
   let feePayer = null
   try {
     // Kora guide mentions a "getPayerSigner" method. Implemented by some deployments.
-    const out = await koraFetch('/getPayerSigner', { method: 'POST', body: {} })
+    const out = await koraRpc('getPayerSigner', {})
     feePayer = out?.address || out?.payer || null
   } catch {
     // ignore
@@ -95,38 +101,42 @@ app.get('/supported', requireToken, async (_req, res) => {
 
 // Verify: check that the payment payload is valid without broadcasting
 const VerifySchema = z.object({
-  // x402 core sends a JSON body; exact shape depends on scheme/network.
-  // We pass it through to Kora.
-  payment: z.any(),
+  x402Version: z.string().optional(),
+  paymentPayload: z.any(),
+  paymentRequirements: z.any().optional(),
 })
 
 app.post('/verify', requireToken, async (req, res) => {
   const parsed = VerifySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid body' })
 
-  // For Solana exact payments, the payment payload contains a transaction.
-  // We forward to Kora for validation/signTransaction.
   try {
-    const out = await koraFetch('/signTransaction', { body: parsed.data.payment })
-    return res.json({ ok: true, isValid: true, result: out })
+    // Kora expects { transaction } (typically base64) via JSON-RPC.
+    const tx = parsed.data.paymentPayload?.transaction || parsed.data.paymentPayload
+    const out = await koraRpc('signTransaction', { transaction: tx })
+    return res.json({ isValid: true, result: out })
   } catch (e) {
-    return res.status(400).json({ ok: false, isValid: false, error: e?.message || 'verify failed' })
+    return res.status(400).json({ isValid: false, error: e?.message || 'verify failed' })
   }
 })
 
 // Settle: broadcast the transaction (Kora signs as fee payer and sends)
-const SettleSchema = z.object({ payment: z.any() })
+const SettleSchema = z.object({
+  x402Version: z.string().optional(),
+  paymentPayload: z.any(),
+  paymentRequirements: z.any().optional(),
+})
 
 app.post('/settle', requireToken, async (req, res) => {
   const parsed = SettleSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid body' })
 
   try {
-    const out = await koraFetch('/signAndSendTransaction', { body: parsed.data.payment })
-    // Return tx signature / receipt
-    return res.json({ ok: true, settled: true, result: out })
+    const tx = parsed.data.paymentPayload?.transaction || parsed.data.paymentPayload
+    const out = await koraRpc('signAndSendTransaction', { transaction: tx })
+    return res.json({ success: true, result: out })
   } catch (e) {
-    return res.status(400).json({ ok: false, settled: false, error: e?.message || 'settle failed' })
+    return res.status(400).json({ success: false, error: e?.message || 'settle failed' })
   }
 })
 
