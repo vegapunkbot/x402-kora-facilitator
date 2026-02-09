@@ -86,14 +86,17 @@ app.get('/supported', requireToken, async (_req, res) => {
     // ignore
   }
 
+  // Advertise support for both v2 (current) and v1 clients.
+  const kindBase = {
+    scheme: X402_SCHEME,
+    network: X402_NETWORK,
+    ...(feePayer ? { extra: { feePayer } } : {}),
+  }
+
   res.json({
     kinds: [
-      {
-        x402Version: 1,
-        scheme: X402_SCHEME,
-        network: X402_NETWORK,
-        ...(feePayer ? { extra: { feePayer } } : {}),
-      },
+      { x402Version: 2, ...kindBase },
+      { x402Version: 1, ...kindBase },
     ],
     extensions: [],
     // Optional: expose signer addresses by CAIP family (svm)
