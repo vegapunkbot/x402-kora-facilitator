@@ -21,6 +21,7 @@ Required:
 
 Optional:
 - `KORA_API_KEY` — if your Kora RPC requires auth
+- `FACILITATOR_TOKEN` — shared secret; if set, requests must include header `x-facilitator-token: <token>`
 - `X402_NETWORK` — default `solana-devnet`
 - `X402_SCHEME` — default `exact`
 - `FACILITATOR_VERSION` — default `0.1.0`

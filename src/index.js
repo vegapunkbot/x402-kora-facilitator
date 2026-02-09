@@ -54,12 +54,22 @@ async function koraFetch(path, { method = 'POST', body } = {}) {
   return json
 }
 
+// --- auth (optional) ---
+// If FACILITATOR_TOKEN is set, callers must send header: x-facilitator-token: <token>
+const FACILITATOR_TOKEN = (process.env.FACILITATOR_TOKEN || '').trim()
+function requireToken(req, res, next) {
+  if (!FACILITATOR_TOKEN) return next()
+  const got = String(req.headers['x-facilitator-token'] || '')
+  if (got && got === FACILITATOR_TOKEN) return next()
+  return res.status(403).json({ ok: false, error: 'forbidden' })
+}
+
 // --- x402 facilitator endpoints ---
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 // x402 core calls GET /supported on startup to learn what the facilitator can do.
-app.get('/supported', async (_req, res) => {
+app.get('/supported', requireToken, async (_req, res) => {
   // We don’t strictly need Kora for this response, but we optionally include a fee payer address if Kora exposes it.
   let feePayer = null
   try {
@@ -90,7 +100,7 @@ const VerifySchema = z.object({
   payment: z.any(),
 })
 
-app.post('/verify', async (req, res) => {
+app.post('/verify', requireToken, async (req, res) => {
   const parsed = VerifySchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid body' })
 
@@ -107,7 +117,7 @@ app.post('/verify', async (req, res) => {
 // Settle: broadcast the transaction (Kora signs as fee payer and sends)
 const SettleSchema = z.object({ payment: z.any() })
 
-app.post('/settle', async (req, res) => {
+app.post('/settle', requireToken, async (req, res) => {
   const parsed = SettleSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'invalid body' })
 
