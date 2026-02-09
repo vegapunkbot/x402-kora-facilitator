@@ -1,0 +1,19 @@
+{
+  "name": "x402-kora-facilitator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal x402 facilitator wrapper that delegates verify/settle to a private Kora RPC.",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon --watch src --ext js --exec node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
