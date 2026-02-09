@@ -76,10 +76,10 @@ app.get('/health', (_req, res) => res.json({ ok: true }))
 
 // x402 core calls GET /supported on startup to learn what the facilitator can do.
 app.get('/supported', requireToken, async (_req, res) => {
-  // We don’t strictly need Kora for this response, but we optionally include a fee payer address if Kora exposes it.
+  // x402 expects a "kinds" array shaped like @x402/core's facilitator getSupported().
+  // We'll report a single kind: exact + configured Solana network.
   let feePayer = null
   try {
-    // Kora guide mentions a "getPayerSigner" method. Implemented by some deployments.
     const out = await koraRpc('getPayerSigner', {})
     feePayer = out?.address || out?.payer || null
   } catch {
@@ -87,15 +87,17 @@ app.get('/supported', requireToken, async (_req, res) => {
   }
 
   res.json({
-    ok: true,
-    version: FACILITATOR_VERSION,
-    supported: [
+    kinds: [
       {
+        x402Version: 1,
         scheme: X402_SCHEME,
         network: X402_NETWORK,
-        feePayer,
+        ...(feePayer ? { extra: { feePayer } } : {}),
       },
     ],
+    extensions: [],
+    // Optional: expose signer addresses by CAIP family (svm)
+    signers: feePayer ? { svm: [feePayer] } : {},
   })
 })
 
